@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TradingAgents — Web UI</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--acc:#22c55e;--warn:#f59e0b;--err:#ef4444;--txt:#e2e8f0;--mut:#94a3b8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:16px 24px;border-bottom:1px solid #334155;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:20px;margin:0}header small{color:var(--mut)}
+main{max-width:1100px;margin:0 auto;padding:20px;display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border-radius:12px;padding:18px;border:1px solid #334155}
+.card h2{margin:0 0 12px;font-size:16px}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:8px 10px;border-radius:8px;border:1px solid #475569;background:#0b1220;color:var(--txt)}
+input[type=checkbox]{width:auto}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{background:var(--acc);border:0;color:#052e16;font-weight:700;padding:10px 16px;border-radius:8px;cursor:pointer;margin-top:12px}
+button.sec{background:#334155;color:var(--txt)}
+#banner{padding:10px 14px;border-radius:8px;margin-bottom:4px;display:none}
+#banner.warn{display:block;background:#451a03;color:#fdba74}
+#banner.ok{display:block;background:#052e16;color:#86efac}
+#log{background:#020617;border:1px solid #334155;border-radius:8px;padding:12px;height:340px;overflow:auto;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.status{font-weight:700}.status.running{color:var(--warn)}.status.done{color:var(--acc)}.status.error{color:var(--err)}
+.keygrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.badge{font-size:11px;padding:1px 8px;border-radius:99px;background:#334155;color:var(--mut);margin-left:6px}
+.badge.set{background:#052e16;color:#86efac}
+a{color:#7dd3fc}
+</style>
+</head>
+<body>
+<header>
+<h1>📈 TradingAgents <small>Multi-Agents LLM Trading Framework — LXC Web UI</small></h1>
+<span id="fw" class="badge">…</span>
+</header>
+<main>
+<div class="card">
+<h2>1 · LLM &amp; API-Keys</h2>
+<div id="banner"></div>
+<label>Provider</label><select id="llm_provider"></select>
+<div class="row">
+<div><label>Deep-Think Modell</label><input id="deep_think_llm" placeholder="z. B. gpt-5.6"></div>
+<div><label>Quick-Think Modell</label><input id="quick_think_llm" placeholder="z. B. gpt-5.6-mini"></div>
+</div>
+<label>Backend-URL (nur ollama / openai_compatible)</label><input id="backend_url" placeholder="http://localhost:11434/v1">
+<label>Ausgabesprache</label><input id="output_language" value="English">
+<label>API-Keys (leer = unverändert lassen)</label>
+<div class="keygrid" id="keys"></div>
+<button id="save">💾 Konfiguration speichern</button>
+<span id="saveMsg"></span>
+</div>
+<div class="card">
+<h2>2 · Analyse starten</h2>
+<div class="row">
+<div><label>Ticker (AAPL, 0700.HK, BTC-USD …)</label><input id="ticker" value="SPY"></div>
+<div><label>Analyse-Datum (YYYY-MM-DD)</label><input id="date"></div>
+</div>
+<div class="row">
+<div><label>Debate-Runden (1–5)</label><input id="debate" type="number" min="1" max="5" value="1"></div>
+<div><label>Risk-Runden (1–5)</label><input id="risk" type="number" min="1" max="5" value="1"></div>
+</div>
+<label>Analysten (alle = Standard)</label>
+<div>
+<label><input type="checkbox" class="an" value="market" checked> Market</label>
+<label><input type="checkbox" class="an" value="social" checked> Sentiment</label>
+<label><input type="checkbox" class="an" value="news" checked> News</label>
+<label><input type="checkbox" class="an" value="fundamentals" checked> Fundamentals</label>
+<label><input type="checkbox" id="ckpt"> Checkpoint-Resume aktivieren</label>
+</div>
+<button id="run">▶ Analyse starten</button>
+<button class="sec" id="reportsBtn">📂 Reports aktualisieren</button>
+<p>Status: <span id="st" class="status">idle</span> <span id="job"></span></p>
+</div>
+<div class="card" style="grid-column:1/-1">
+<h2>3 · Live-Log &amp; Ergebnis</h2>
+<div id="log">Noch keine Analyse gestartet.</div>
+</div>
+<div class="card" style="grid-column:1/-1">
+<h2>4 · Reports</h2>
+<div id="reports"><em>Lade …</em></div>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+$('date').value=new Date().toISOString().slice(0,10);
+const KEY_FIELDS=["OPENAI_API_KEY","GOOGLE_API_KEY","ANTHROPIC_API_KEY","XAI_API_KEY","DEEPSEEK_API_KEY","OPENROUTER_API_KEY","DASHSCOPE_API_KEY","ZHIPU_API_KEY","MINIMAX_API_KEY","MISTRAL_API_KEY","MOONSHOT_API_KEY","GROQ_API_KEY","NVIDIA_API_KEY","ALPHA_VANTAGE_API_KEY","FRED_API_KEY"];
+let timer=null;
+async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});const t=await r.json();if(!r.ok)throw new Error(t.detail||JSON.stringify(t));return t;}
+async function loadCfg(){
+ try{const c=await api('GET','/api/config');
+  $('llm_provider').innerHTML=c.providers.map(p=>`<option ${p===c.llm_provider?'selected':''}>${p}</option>`).join('');
+  $('deep_think_llm').value=c.deep_think_llm||'';$('quick_think_llm').value=c.quick_think_llm||'';
+  $('backend_url').value=c.backend_url||'';$('output_language').value=c.output_language||'English';
+  $('keys').innerHTML=KEY_FIELDS.map(k=>`<div><label>${k}<span class="badge ${c.keys_set[k]?'set':''}">${c.keys_set[k]?'gesetzt':'leer'}</span></label><input data-k="${k}" type="password" placeholder="••••••••" autocomplete="off"></div>`).join('');
+  const fw=$('fw');fw.textContent=c.framework_ok?'Framework OK':'Framework FEHLT';fw.className='badge '+(c.framework_ok?'set':'');
+  const b=$('banner');if(!c.framework_ok){b.className='warn';b.textContent='⚠ TradingAgents-Framework nicht importierbar: '+c.framework_detail+' — Setup-Log im Container prüfen (journalctl -u tradingagents-web).';}else{b.className='ok';b.textContent='✓ Framework bereit.';}
+ }catch(e){const b=$('banner');b.className='warn';b.textContent='Config-Laden fehlgeschlagen (voller Fehler in Konsole): '+e.message;console.error(e);}
+}
+$('save').onclick=async()=>{const keys={};document.querySelectorAll('#keys input').forEach(i=>{if(i.value.trim())keys[i.dataset.k]=i.value.trim();});
+ try{const r=await api('POST','/api/config',{llm_provider:$('llm_provider').value,backend_url:$('backend_url').value,deep_think_llm:$('deep_think_llm').value,quick_think_llm:$('quick_think_llm').value,output_language:$('output_language').value,keys});$('saveMsg').textContent=' ✓ gespeichert: '+r.saved.join(', ');loadCfg();}
+ catch(e){$('saveMsg').textContent=' ✗ '+e.message;}};
+$('run').onclick=async()=>{const analysts=[...document.querySelectorAll('.an:checked')].map(x=>x.value);
+ try{const r=await api('POST','/api/analyze',{ticker:$('ticker').value,date:$('date').value,llm_provider:$('llm_provider').value,deep_think_llm:$('deep_think_llm').value,quick_think_llm:$('quick_think_llm').value,max_debate_rounds:+$('debate').value,max_risk_rounds:+$('risk').value,output_language:$('output_language').value,analysts,checkpoint_enabled:$('ckpt').checked,backend_url:$('backend_url').value});
+  $('job').textContent='Job '+r.job_id;poll(r.job_id);}catch(e){$('log').textContent='Start fehlgeschlagen:\n'+e.message;}};
+function poll(id){clearInterval(timer);timer=setInterval(async()=>{try{const j=await api('GET','/api/status/'+id);
+ const s=$('st');s.textContent=j.status;s.className='status '+j.status;
+ $('log').textContent=(j.log||'(kein Log)')+(j.status==='done'?'\n\n===== ERGEBNIS =====\n'+(j.result||'(leer)'):'')+(j.status==='error'?'\n\n===== FEHLER =====\n'+(j.error||'siehe Log'):'');
+ $('log').scrollTop=$('log').scrollHeight;
+ if(j.status==='done'||j.status==='error'){clearInterval(timer);loadReports();}}catch(e){$('log').textContent='Poll-Fehler: '+e.message;clearInterval(timer);}},2000);}
+async function loadReports(){try{const r=await api('GET','/api/reports');
+ $('reports').innerHTML=`<p>Results-Verzeichnis: <code>${r.results_dir}</code> · Memory-Log: ${r.memory_log_exists?'✓':'—'}</p>`+(r.reports.length?'<ul>'+r.reports.map(x=>`<li><a href="#" data-p="${x.path}">${x.path}</a> <small>(${x.size} B, ${x.mtime})</small></li>`).join('')+'</ul>':'<em>Noch keine Reports.</em>');
+ document.querySelectorAll('#reports a').forEach(a=>a.onclick=async e=>{e.preventDefault();const d=await api('GET','/api/report?path='+encodeURIComponent(a.dataset.p));$('log').textContent='===== '+d.path+' =====\n\n'+d.content;window.scrollTo(0,0);});}catch(e){$('reports').textContent='Fehler: '+e.message;}}
+$('reportsBtn').onclick=loadReports;
+loadCfg();loadReports();
+</script>
+</body>
+</html>
