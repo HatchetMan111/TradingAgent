@@ -59,11 +59,17 @@ Danach läuft vollautomatisch:
 Web UI öffnen → **Schritt 1**: Provider + API-Key eintragen → **Schritt 2**:
 Ticker/Datum wählen → Analyse starten → Live-Log + Ergebnis + Reports.
 
-## 2 · Update
+## 2 · Update / mehrere Instanzen
 
-Einfach den Einzeiler erneut ausführen — bei existierender CT-ID wird
-automatisch der **Update-Modus** angeboten (Container bleibt, Code + Deps
-werden aktualisiert, Service restartet). Idempotent, mehrfach lauffähig.
+Jeder Installer-Lauf erstellt einen **neuen** Container: ist die gewünschte
+CT-ID belegt, wird automatisch die nächste freie genommen (der Hostname wird
+dann mit `-<CTID>` suffixiert, um Duplikate zu vermeiden).
+Für ein Update im **bestehenden** Container:
+
+```bash
+pct push 150 install/setup-container.sh /opt/tradingagents/setup-container.sh
+pct exec 150 -- bash /opt/tradingagents/setup-container.sh
+```
 
 ```bash
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/TradingAgent/main/install/tradingagents.sh)"

@@ -83,24 +83,21 @@ ask TPL_STORAGE "Storage für Templates"           "${DEFAULT_TEMPLATE_STORAGE}"
 ask BRIDGE      "Netzwerk-Bridge"                 "${DEFAULT_BRIDGE}"
 ask WEB_PORT    "Web-UI-Port"                     "${DEFAULT_WEB_PORT}"
 
-# --- Existiert CT-ID bereits? -> Update-Pfad (idempotent) ----------------------
-if pct status "${CTID}" >/dev/null 2>&1; then
-  echo "CT ${CTID} existiert bereits."
-  REUSE="update"
-  if command -v whiptail >/dev/null; then
-    whiptail --yesno "CT ${CTID} existiert. Setup im Container erneut ausführen (Update)?" 8 70 \
-      && REUSE="update" || REUSE="abort"
-  else
-    read -rp "Setup erneut ausführen (Update)? [J/n]: " ans
-    [[ "${ans:-J}" =~ ^[Nn] ]] && REUSE="abort" || REUSE="update"
+# --- CT-ID: belegt? -> automatisch nächste freie nehmen -------------------------
+if ! [[ "${CTID}" =~ ^[0-9]+$ ]]; then
+  echo "Ungültige CT-ID: ${CTID} (nur Zahlen erlaubt)." >&2; exit 1
+fi
+ORIG_CTID="${CTID}"
+while pct status "${CTID}" >/dev/null 2>&1; do
+  CTID=$((CTID + 1))
+  if [[ "${CTID}" -gt 999999 ]]; then
+    echo "Keine freie CT-ID gefunden." >&2; exit 1
   fi
-  if [[ "${REUSE}" == "update" ]]; then
-    echo "-> Update-Modus: Container wird wiederverwendet."
-  else
-    echo "Abgebrochen. Andere CT-ID wählen."; exit 0
-  fi
-else
-  REUSE="create"
+done
+if [[ "${CTID}" != "${ORIG_CTID}" ]]; then
+  echo "CT-ID ${ORIG_CTID} belegt -> nehme nächste freie: ${CTID}"
+  HOSTNAME="${HOSTNAME}-${CTID}"
+  echo "Hostname angepasst (Duplikate vermeiden): ${HOSTNAME}"
 fi
 
 # --- Template sicherstellen ----------------------------------------------------
@@ -115,26 +112,21 @@ if [[ -z "${TEMPLATE:-}" ]]; then
 fi
 echo "-> Template: ${TEMPLATE}"
 
-# --- Container erstellen (nur wenn neu) ----------------------------------------
-if [[ "${REUSE}" == "create" ]]; then
-  echo "-> Erstelle LXC ${CTID} (${CORES} CPU / ${MEMORY} MB / ${DISK} GB) ..."
-  pct create "${CTID}" "${TPL_STORAGE}:vztmpl/${TEMPLATE}" \
-    --hostname "${HOSTNAME}" \
-    --cores "${CORES}" --memory "${MEMORY}" \
-    --rootfs "${STORAGE}:${DISK}" \
-    --net0 "name=eth0,bridge=${BRIDGE},ip=dhcp" \
-    --onboot 1 --start 1 \
-    --unprivileged 1 \
-    --features nesting=1
-  # onboot doppelt absichern (Config-Key)
-  grep -q "^onboot:" "/etc/pve/lxc/${CTID}.conf" \
-    || echo "onboot: 1" >> "/etc/pve/lxc/${CTID}.conf"
-  echo "-> Warte auf Container-Boot ..."
-  sleep 8
-else
-  pct start "${CTID}" 2>/dev/null || true
-  sleep 5
-fi
+# --- Container erstellen ----------------------------------------------------------
+echo "-> Erstelle LXC ${CTID} (${CORES} CPU / ${MEMORY} MB / ${DISK} GB) ..."
+pct create "${CTID}" "${TPL_STORAGE}:vztmpl/${TEMPLATE}" \
+  --hostname "${HOSTNAME}" \
+  --cores "${CORES}" --memory "${MEMORY}" \
+  --rootfs "${STORAGE}:${DISK}" \
+  --net0 "name=eth0,bridge=${BRIDGE},ip=dhcp" \
+  --onboot 1 --start 1 \
+  --unprivileged 1 \
+  --features nesting=1
+# onboot doppelt absichern (Config-Key)
+grep -q "^onboot:" "/etc/pve/lxc/${CTID}.conf" \
+  || echo "onboot: 1" >> "/etc/pve/lxc/${CTID}.conf"
+echo "-> Warte auf Container-Boot ..."
+sleep 8
 
 pct exec "${CTID}" -- bash -c "echo Container erreichbar: \$(hostname) \$(hostname -I | awk '{print \$1}')"
 
@@ -184,7 +176,7 @@ trap fail ERR
 echo "=================================================================="
 echo " ✅ Fertig! TradingAgents Web UI: http://${CT_IP}:${WEB_PORT}"
 echo "    CT-ID ${CTID} (${HOSTNAME}), onboot=1, Service=tradingagents-web"
-echo "    Update : Setup erneut laufen lassen (Script fragt automatisch)"
+echo "    Update : pct exec ${CTID} -- bash /opt/tradingagents/setup-container.sh"
 echo "    Logs   : pct exec ${CTID} -- journalctl -u tradingagents-web -f"
 echo "    Löschen: pct stop ${CTID} && pct destroy ${CTID}"
 echo "=================================================================="
