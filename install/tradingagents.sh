@@ -12,7 +12,7 @@
 #   4. Installiert dort TradingAgents + Web UI als systemd-Service
 #   5. Verifiziert Service + HTTP und gibt die finale URL aus
 #
-# Idempotent: existiert die CT-ID bereits, wird Update statt Neuanlage angeboten.
+# Belegte CT-ID -> automatisch nächste freie nehmen (LXC *und* VM werden geprüft).
 # Debugging:  DEBUG=1 bash -x install/tradingagents.sh   (volles Trace-Log)
 # =============================================================================
 set -euo pipefail
@@ -84,11 +84,32 @@ ask BRIDGE      "Netzwerk-Bridge"                 "${DEFAULT_BRIDGE}"
 ask WEB_PORT    "Web-UI-Port"                     "${DEFAULT_WEB_PORT}"
 
 # --- CT-ID: belegt? -> automatisch nächste freie nehmen -------------------------
+# Eingabe säubern (Leerzeichen/CR entfernen — passiert bei Copy&Paste),
+# leer -> Default.
+CTID="$(printf '%s' "${CTID:-}" | tr -d '[:space:]')"
+[[ -z "${CTID}" ]] && CTID="${DEFAULT_CTID}"
 if ! [[ "${CTID}" =~ ^[0-9]+$ ]]; then
-  echo "Ungültige CT-ID: ${CTID} (nur Zahlen erlaubt)." >&2; exit 1
+  echo "Ungültige CT-ID: '${CTID}' (nur Zahlen erlaubt)." >&2; exit 1
 fi
+# 10er-Basis erzwingen (führende Nullen würden sonst als Oktal gerechnet)
+CTID=$((10#${CTID}))
+if [[ "${CTID}" -lt 100 ]]; then
+  echo "Ungültige CT-ID: ${CTID} (Proxmox-IDs beginnen bei 100)." >&2; exit 1
+fi
+
+id_taken() { # Rückgabe 0 = belegt — prüft LXC *und* QEMU-VMs.
+  # pct status allein reicht NICHT: es sieht nur Container, keine VMs!
+  local id=$1
+  [[ -f "/etc/pve/lxc/${id}.conf" || -f "/etc/pve/qemu-server/${id}.conf" ]] && return 0
+  pct status "${id}" >/dev/null 2>&1 && return 0
+  if command -v qm >/dev/null 2>&1; then
+    qm status "${id}" >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
 ORIG_CTID="${CTID}"
-while pct status "${CTID}" >/dev/null 2>&1; do
+while id_taken "${CTID}"; do
   CTID=$((CTID + 1))
   if [[ "${CTID}" -gt 999999 ]]; then
     echo "Keine freie CT-ID gefunden." >&2; exit 1
