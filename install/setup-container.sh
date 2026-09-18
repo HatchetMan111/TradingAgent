@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # --- Variablen (oben, Community-Scripts-Stil) ---------------------------------
-APP="tradingagents"
+APP="TradingAgent"
 BASE_DIR="/opt/tradingagents"
 SRC_DIR="${BASE_DIR}/src/TradingAgents"
 WEBUI_SRC_DIR="${BASE_DIR}/webui"          # kommt per Wrapper-Tarball vom Host

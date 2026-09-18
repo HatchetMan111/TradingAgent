@@ -18,7 +18,7 @@
 set -euo pipefail
 
 # ============================ VARIABLEN (oben) ================================
-APP="tradingagents"
+APP="TradingAgent"
 GITHUB_USER="${GITHUB_USER:-HatchetMan111}"
 GITHUB_REPO="${GITHUB_REPO:-TradingAgent}"
 GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
@@ -26,7 +26,7 @@ RAW_BASE="https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITH
 TARBALL="https://github.com/${GITHUB_USER}/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.tar.gz"
 
 DEFAULT_CTID="${DEFAULT_CTID:-150}"
-DEFAULT_HOSTNAME="${DEFAULT_HOSTNAME:-tradingagents}"
+DEFAULT_HOSTNAME="${DEFAULT_HOSTNAME:-TradingAgent}"
 DEFAULT_CORES="${DEFAULT_CORES:-2}"
 DEFAULT_MEMORY="${DEFAULT_MEMORY:-2048}"     # MB
 DEFAULT_DISK="${DEFAULT_DISK:-8}"            # GB
@@ -169,7 +169,12 @@ echo "-> Push nach CT:${CTID} ..."
 # (Ein Ordner-Push erzeugt eine Datei statt Verzeichnis -> "Not a directory".)
 # Darum: alles als Tarball pushen und im Container entpacken.
 tar -czf "${WORKDIR}/wrapper.tar.gz" -C "${WORKDIR}/repo" webui systemd install/setup-container.sh
+# pct push legt KEINE Eltern-Ordner an -> Zielordner vorher erzeugen,
+# danach Existenz prüfen (sonst scheitert tar extract mit kryptischem Fehler).
+pct exec "${CTID}" -- mkdir -p /opt/tradingagents
 pct push "${CTID}" "${WORKDIR}/wrapper.tar.gz" /opt/tradingagents/wrapper.tar.gz
+pct exec "${CTID}" -- test -f /opt/tradingagents/wrapper.tar.gz \
+  || { echo "Tarball-Push in CT:${CTID} fehlgeschlagen." >&2; exit 1; }
 pct exec "${CTID}" -- tar -xzf /opt/tradingagents/wrapper.tar.gz -C /opt/tradingagents
 pct exec "${CTID}" -- chmod +x /opt/tradingagents/install/setup-container.sh
 pct exec "${CTID}" -- test -f /opt/tradingagents/webui/requirements-web.txt \
