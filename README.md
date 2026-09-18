@@ -67,8 +67,8 @@ dann mit `-<CTID>` suffixiert, um Duplikate zu vermeiden).
 Für ein Update im **bestehenden** Container:
 
 ```bash
-pct push 150 install/setup-container.sh /opt/tradingagents/setup-container.sh
-pct exec 150 -- bash /opt/tradingagents/setup-container.sh
+pct push 150 install/setup-container.sh /opt/tradingagents/install/setup-container.sh
+pct exec 150 -- bash /opt/tradingagents/install/setup-container.sh
 ```
 
 ```bash

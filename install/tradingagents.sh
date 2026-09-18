@@ -165,18 +165,20 @@ else
 fi
 
 echo "-> Push nach CT:${CTID} ..."
-pct exec "${CTID}" -- mkdir -p /opt/tradingagents/repo-files/systemd
-pct push "${CTID}" "${WORKDIR}/repo/webui" /opt/tradingagents/webui
-pct push "${CTID}" "${WORKDIR}/repo/systemd/tradingagents-web.service" \
-  /opt/tradingagents/repo-files/systemd/tradingagents-web.service
-pct push "${CTID}" "${WORKDIR}/repo/install/setup-container.sh" \
-  /opt/tradingagents/setup-container.sh
-pct exec "${CTID}" -- chmod +x /opt/tradingagents/setup-container.sh
+# WICHTIG: pct push kann nur DATEIEN übertragen, keine Ordner!
+# (Ein Ordner-Push erzeugt eine Datei statt Verzeichnis -> "Not a directory".)
+# Darum: alles als Tarball pushen und im Container entpacken.
+tar -czf "${WORKDIR}/wrapper.tar.gz" -C "${WORKDIR}/repo" webui systemd install/setup-container.sh
+pct push "${CTID}" "${WORKDIR}/wrapper.tar.gz" /opt/tradingagents/wrapper.tar.gz
+pct exec "${CTID}" -- tar -xzf /opt/tradingagents/wrapper.tar.gz -C /opt/tradingagents
+pct exec "${CTID}" -- chmod +x /opt/tradingagents/install/setup-container.sh
+pct exec "${CTID}" -- test -f /opt/tradingagents/webui/requirements-web.txt \
+  || { echo "Wrapper-Tarball unvollständig im Container angekommen." >&2; exit 1; }
 
 # --- Setup IM Container ausführen ------------------------------------------------
 echo "-> Führe Setup im Container aus (dauert einige Minuten) ..."
 pct exec "${CTID}" -- env WEB_PORT="${WEB_PORT}" DEBUG="${DEBUG:-0}" \
-  bash /opt/tradingagents/setup-container.sh
+  bash /opt/tradingagents/install/setup-container.sh
 
 # --- Verifikation vom Host -------------------------------------------------------
 echo "-> Verifikation ..."
@@ -197,7 +199,7 @@ trap fail ERR
 echo "=================================================================="
 echo " ✅ Fertig! TradingAgents Web UI: http://${CT_IP}:${WEB_PORT}"
 echo "    CT-ID ${CTID} (${HOSTNAME}), onboot=1, Service=tradingagents-web"
-echo "    Update : pct exec ${CTID} -- bash /opt/tradingagents/setup-container.sh"
+echo "    Update : pct exec ${CTID} -- bash /opt/tradingagents/install/setup-container.sh"
 echo "    Logs   : pct exec ${CTID} -- journalctl -u tradingagents-web -f"
 echo "    Löschen: pct stop ${CTID} && pct destroy ${CTID}"
 echo "=================================================================="

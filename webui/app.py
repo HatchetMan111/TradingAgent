@@ -201,9 +201,18 @@ def run_analysis_job(job_id: str, req: AnalyzeRequest) -> None:
             f"deep={config.get('deep_think_llm')} quick={config.get('quick_think_llm')} "
             f"debate={config['max_debate_rounds']} risk={config['max_risk_discuss_rounds']}")
 
-        ta = TradingAgentsGraph(debug=True, config=config)
+        allowed = ("market", "social", "news", "fundamentals")
+        analysts = [a for a in (req.analysts or []) if a in allowed] or list(allowed)
+        log(f"Analysts: {', '.join(analysts)}")
+        ta = TradingAgentsGraph(analysts, debug=True, config=config)
         log("Graph initialized, propagating ... (this can take several minutes)")
-        _, decision = ta.propagate(req.ticker.strip().upper(), req.date.strip())
+        final_state, decision = ta.propagate(req.ticker.strip().upper(), req.date.strip())
+        try:
+            report_path = ta.save_reports(final_state, req.ticker.strip().upper())
+            log(f"Reports gespeichert: {report_path}")
+        except Exception:
+            log("WARN: save_reports fehlgeschlagen (Analyse trotzdem OK) — Traceback:")
+            log(traceback.format_exc())
         log("Analysis complete.")
         set_state(status="done", result=str(decision))
     except Exception as exc:  # noqa: BLE001 — we persist the FULL chain

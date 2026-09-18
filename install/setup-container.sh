@@ -12,7 +12,7 @@ set -euo pipefail
 APP="tradingagents"
 BASE_DIR="/opt/tradingagents"
 SRC_DIR="${BASE_DIR}/src/TradingAgents"
-WEBUI_SRC_DIR="${BASE_DIR}/webui"          # wird vom Host per pct push befüllt
+WEBUI_SRC_DIR="${BASE_DIR}/webui"          # kommt per Wrapper-Tarball vom Host
 VENV_DIR="${BASE_DIR}/venv"
 WEB_PORT="${WEB_PORT:-8080}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -75,13 +75,22 @@ fi
 echo "[5/7] .env + systemd-Unit ..."
 touch "${BASE_DIR}/.env"
 chmod 600 "${BASE_DIR}/.env"
-# Service-Unit aus Wrapper-Repo übernehmen (liegt per pct push in webui/..),
-# Fallback: Minimal-Unit generieren falls Datei fehlt.
-if [[ -f "${BASE_DIR}/repo-files/systemd/tradingagents-web.service" ]]; then
-  cp "${BASE_DIR}/repo-files/systemd/tradingagents-web.service" "${SERVICE_FILE}"
-elif [[ -f "./systemd/tradingagents-web.service" ]]; then
-  cp "./systemd/tradingagents-web.service" "${SERVICE_FILE}"
+# Service-Unit aus Wrapper-Repo übernehmen (kommt per Tarball nach
+# /opt/tradingagents/systemd/). Fehlt sie, laut abbrechen statt schweigend
+# eine veraltete Unit weiterzuverwenden.
+SERVICE_SRC=""
+for cand in "${BASE_DIR}/systemd/tradingagents-web.service" \
+            "${BASE_DIR}/repo-files/systemd/tradingagents-web.service" \
+            "./systemd/tradingagents-web.service"; do
+  if [[ -f "${cand}" ]]; then SERVICE_SRC="${cand}"; break; fi
+done
+if [[ -z "${SERVICE_SRC}" ]]; then
+  echo "Service-Unit nicht gefunden (gesucht in ${BASE_DIR}/systemd/, repo-files/, ./systemd/)." >&2
+  echo "Wrapper-Tarball unvollständig übertragen?" >&2
+  exit 1
 fi
+cp "${SERVICE_SRC}" "${SERVICE_FILE}"
+echo "  - Service-Unit von: ${SERVICE_SRC}"
 # Port im Service sicherstellen (neutral gegenüber Template-Abweichungen)
 if grep -q -- "--port" "${SERVICE_FILE}"; then
   sed -i -E "s/--port [0-9]+/--port ${WEB_PORT}/" "${SERVICE_FILE}"
